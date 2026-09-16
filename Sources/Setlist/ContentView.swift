@@ -2,6 +2,7 @@ import SwiftUI
 
 struct ContentView: View {
     @EnvironmentObject private var eventStore: EventStore
+    @EnvironmentObject private var trackIndexStore: TrackIndexStore
     @State private var route: AppRoute = .newEvent
 
     private var selectedEvent: SetlistEvent? {
@@ -17,8 +18,10 @@ struct ContentView: View {
         } detail: {
             if case let .scanning(scanningEvent) = route {
                 LibraryScanView(event: scanningEvent) {
-                    route = .event(scanningEvent.id)
+                    route = .matching(scanningEvent.id)
                 }
+            } else if case let .matching(eventID) = route {
+                MatchingView(eventID: eventID)
             } else if route == .musicLocations {
                 MusicLocationsView()
             } else if route == .eventsHome {
@@ -31,11 +34,11 @@ struct ContentView: View {
                 ImportRequestView(event: nil) { savedEvent in
                     route = .event(savedEvent.id)
                 } onCheckLibrary: { savedEvent in
-                    route = .scanning(savedEvent)
+                    route = trackIndexStore.tracks.isEmpty ? .scanning(savedEvent) : .matching(savedEvent.id)
                 }
             } else if let selectedEvent {
                 ImportRequestView(event: selectedEvent) { _ in } onCheckLibrary: { savedEvent in
-                    route = .scanning(savedEvent)
+                    route = trackIndexStore.tracks.isEmpty ? .scanning(savedEvent) : .matching(savedEvent.id)
                 }
                     .id(selectedEvent.id)
             }
@@ -215,7 +218,9 @@ private struct SidebarMenuRow: View {
 
 private struct MusicLocationsView: View {
     @EnvironmentObject private var musicLocationStore: MusicLocationStore
+    @EnvironmentObject private var trackIndexStore: TrackIndexStore
     @State private var errorMessage: String?
+    @State private var indexRefreshNeeded = false
 
     var body: some View {
         VStack(alignment: .leading, spacing: 28) {
@@ -253,7 +258,9 @@ private struct MusicLocationsView: View {
                                 Spacer()
                                 Button("Remove", role: .destructive) {
                                     do {
+                                        try trackIndexStore.invalidate()
                                         try musicLocationStore.remove(location)
+                                        indexRefreshNeeded = true
                                     } catch {
                                         errorMessage = "Setlist could not remove this approved location."
                                     }
@@ -272,8 +279,26 @@ private struct MusicLocationsView: View {
                 Label("Setlist will never move, rename, edit, or delete a music file.", systemImage: "checkmark.circle.fill")
                     .foregroundStyle(.green)
                 Spacer()
+                if !trackIndexStore.tracks.isEmpty {
+                    Button("Re-index library") {
+                        do {
+                            try trackIndexStore.invalidate()
+                            indexRefreshNeeded = true
+                            errorMessage = nil
+                        } catch {
+                            errorMessage = "Setlist could not prepare the library for a fresh index."
+                        }
+                    }
+                    .buttonStyle(.bordered)
+                }
                 Button("Add music folder…") { chooseFolder() }
                     .buttonStyle(.borderedProminent)
+            }
+
+            if indexRefreshNeeded {
+                Label("Library re-index is ready. Open an event and choose “Check my library” to start the read-only scan.", systemImage: "arrow.clockwise.circle.fill")
+                    .font(.callout)
+                    .foregroundStyle(Color.setlistBlue)
             }
 
             if let errorMessage {
@@ -299,9 +324,12 @@ private struct MusicLocationsView: View {
 
         guard panel.runModal() == .OK, let url = panel.url else { return }
         do {
+            try trackIndexStore.invalidate()
             try musicLocationStore.add(url: url)
+            indexRefreshNeeded = true
+            errorMessage = nil
         } catch {
-            errorMessage = "Setlist could not save access to this folder. Please try again."
+            errorMessage = "Setlist could not save access to this folder: \(error.localizedDescription)"
         }
     }
 }
@@ -427,12 +455,16 @@ private struct ImportRequestView: View {
     @discardableResult
     private func save() -> SetlistEvent? {
         guard !name.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else { return nil }
-        let songs = source == .paste ? RequestParser.parse(requestText) : existingEvent?.requestSongs ?? []
+        let parsedSongs = source == .paste ? RequestParser.parse(requestText) : existingEvent?.requestSongs ?? []
+        let songs = RequestParser.reconcile(parsedSongs, against: existingEvent?.requestSongs ?? [])
+        let activeRequestIDs = Set(songs.map { $0.id.uuidString })
         let event = SetlistEvent(
             id: existingEvent?.id ?? UUID(),
             name: name.trimmingCharacters(in: .whitespacesAndNewlines),
             date: hasDate ? date : nil,
             requestSongs: songs,
+            selectedTrackPaths: (existingEvent?.selectedTrackPaths ?? [:]).filter { activeRequestIDs.contains($0.key) },
+            autoMatchedRequestIDs: (existingEvent?.autoMatchedRequestIDs ?? []).intersection(activeRequestIDs),
             createdAt: existingEvent?.createdAt ?? .now
         )
         do {
