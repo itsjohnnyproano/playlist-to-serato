@@ -7,6 +7,7 @@ struct SetlistApp: App {
     @StateObject private var eventStore = EventStore()
     @StateObject private var musicLocationStore = MusicLocationStore()
     @StateObject private var trackIndexStore = TrackIndexStore()
+    @StateObject private var playback = PlaybackController()
 
     var body: some Scene {
         WindowGroup {
@@ -14,7 +15,9 @@ struct SetlistApp: App {
                 .environmentObject(eventStore)
                 .environmentObject(musicLocationStore)
                 .environmentObject(trackIndexStore)
+                .environmentObject(playback)
                 .frame(minWidth: 1_050, minHeight: 700)
+                .task { await trackIndexStore.loadSavedIndex() }
         }
         .windowStyle(.hiddenTitleBar)
     }

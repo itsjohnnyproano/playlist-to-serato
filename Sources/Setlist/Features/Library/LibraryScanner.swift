@@ -27,6 +27,7 @@ enum LibraryScanner {
 
     static func scan(
         locations: [MusicLocation],
+        existingTracks: [LocalTrack],
         progress: @escaping @Sendable (ScanUpdate) async -> Void
     ) async throws -> LibraryScanResult {
         let resolvedLocations = try resolve(locations)
@@ -41,24 +42,32 @@ enum LibraryScanner {
         }, onCancel: {
             fileCollectionTask.cancel()
         })
-        let files = collection.files
-
-        var tracks: [LocalTrack] = []
-        tracks.reserveCapacity(files.count)
-        for (index, file) in files.enumerated() {
-            try Task.checkCancellation()
-            if index == 0 || index.isMultiple(of: 10) || index == files.count - 1 {
-                await progress(ScanUpdate(
-                    phase: "Reading audio metadata",
-                    completed: index,
-                    total: files.count,
-                    currentFileName: file.lastPathComponent
-                ))
-            }
-            if let track = await readTrack(at: file, sourceFolders: folders) {
-                tracks.append(track)
-            }
+        let files = uniqueFiles(collection.files)
+        let existingByPath = Dictionary(existingTracks.map { ($0.path, $0) }, uniquingKeysWith: { first, _ in first })
+        let reusableTracks = files.compactMap { file -> LocalTrack? in
+            guard let track = existingByPath[file.url.path], track.matches(file) else { return nil }
+            return track
         }
+        let filesToRead = files.filter { file in
+            guard let track = existingByPath[file.url.path] else { return true }
+            return !track.matches(file)
+        }
+
+        await progress(ScanUpdate(
+            phase: filesToRead.isEmpty ? "Library is up to date" : "Reading changed audio metadata",
+            completed: reusableTracks.count,
+            total: files.count,
+            currentFileName: nil
+        ))
+        let scannedTracks = try await readTracks(
+            filesToRead,
+            sourceFolders: folders,
+            completedBeforeReading: reusableTracks.count,
+            total: files.count,
+            progress: progress
+        )
+        let tracksByPath = Dictionary((reusableTracks + scannedTracks).map { ($0.path, $0) }, uniquingKeysWith: { first, _ in first })
+        let tracks = files.compactMap { tracksByPath[$0.url.path] }
 
         await progress(ScanUpdate(phase: "Finishing index", completed: files.count, total: files.count, currentFileName: nil))
         return LibraryScanResult(tracks: tracks, skippedPaths: collection.skippedPaths)
@@ -86,8 +95,8 @@ enum LibraryScanner {
     }
 
     private static func collectAudioFiles(in folders: [URL]) throws -> FileCollection {
-        let keys: Set<URLResourceKey> = [.isDirectoryKey, .isRegularFileKey, .isHiddenKey]
-        var results: [URL] = []
+        let keys: Set<URLResourceKey> = [.isDirectoryKey, .isRegularFileKey, .isHiddenKey, .fileSizeKey, .contentModificationDateKey]
+        var results: [AudioFileDescriptor] = []
         var skippedPaths: [String] = []
 
         for folder in folders {
@@ -115,13 +124,66 @@ enum LibraryScanner {
                     continue
                 }
                 guard values?.isRegularFile == true, isSupportedAudioFile(url) else { continue }
-                results.append(url)
+                results.append(AudioFileDescriptor(
+                    url: url,
+                    fileSize: values?.fileSize.map(Int64.init),
+                    modificationDate: values?.contentModificationDate,
+                    modificationTimeNanoseconds: values?.contentModificationDate.map { Int64(($0.timeIntervalSince1970 * 1_000_000_000).rounded()) }
+                ))
             }
         }
         return FileCollection(files: results, skippedPaths: skippedPaths)
     }
 
-    private static func readTrack(at url: URL, sourceFolders: [URL]) async -> LocalTrack? {
+    /// A user can approve both a folder and one of its descendants. Keep the
+    /// first descriptor so downstream index entries remain unique and stable.
+    private static func uniqueFiles(_ files: [AudioFileDescriptor]) -> [AudioFileDescriptor] {
+        var seenPaths = Set<String>()
+        return files.filter { seenPaths.insert($0.url.standardizedFileURL.path).inserted }
+    }
+
+    private static func readTracks(
+        _ files: [AudioFileDescriptor],
+        sourceFolders: [URL],
+        completedBeforeReading: Int,
+        total: Int,
+        progress: @escaping @Sendable (ScanUpdate) async -> Void
+    ) async throws -> [LocalTrack] {
+        guard !files.isEmpty else { return [] }
+        let concurrency = min(6, ProcessInfo.processInfo.activeProcessorCount)
+        var iterator = files.makeIterator()
+        var completed = 0
+        var tracks: [LocalTrack] = []
+        tracks.reserveCapacity(files.count)
+
+        try await withThrowingTaskGroup(of: LocalTrack?.self) { group in
+            for _ in 0..<concurrency {
+                guard let file = iterator.next() else { break }
+                group.addTask { await readTrack(at: file, sourceFolders: sourceFolders) }
+            }
+
+            while let track = try await group.next() {
+                try Task.checkCancellation()
+                completed += 1
+                if let track { tracks.append(track) }
+                if completed.isMultiple(of: 100) || completed == files.count {
+                    await progress(ScanUpdate(
+                        phase: "Reading changed audio metadata",
+                        completed: completedBeforeReading + completed,
+                        total: total,
+                        currentFileName: track.map { URL(fileURLWithPath: $0.path).lastPathComponent }
+                    ))
+                }
+                if let file = iterator.next() {
+                    group.addTask { await readTrack(at: file, sourceFolders: sourceFolders) }
+                }
+            }
+        }
+        return tracks
+    }
+
+    private static func readTrack(at file: AudioFileDescriptor, sourceFolders: [URL]) async -> LocalTrack? {
+        let url = file.url
         let asset = AVURLAsset(url: url)
         let metadata = (try? await asset.load(.commonMetadata)) ?? []
         let duration = try? await asset.load(.duration)
@@ -144,7 +206,10 @@ enum LibraryScanner {
             fileType: url.pathExtension.uppercased(),
             duration: duration?.seconds.isFinite == true ? duration?.seconds : nil,
             bitrateKbps: dataRate.map { Int(($0 / 1_000).rounded()) },
-            sourceFolder: sourceFolder
+            sourceFolder: sourceFolder,
+            fileSize: file.fileSize,
+            modificationDate: file.modificationDate,
+            modificationTimeNanoseconds: file.modificationTimeNanoseconds
         )
     }
 
@@ -155,8 +220,23 @@ enum LibraryScanner {
 }
 
 private struct FileCollection: Sendable {
-    var files: [URL]
+    var files: [AudioFileDescriptor]
     var skippedPaths: [String]
+}
+
+private struct AudioFileDescriptor: Sendable {
+    let url: URL
+    let fileSize: Int64?
+    let modificationDate: Date?
+    let modificationTimeNanoseconds: Int64?
+}
+
+private extension LocalTrack {
+    func matches(_ file: AudioFileDescriptor) -> Bool {
+        guard let fileSize, let storedFingerprint = modificationTimeNanoseconds, let currentFingerprint = file.modificationTimeNanoseconds else { return false }
+        return self.fileSize == fileSize
+            && storedFingerprint == currentFingerprint
+    }
 }
 
 private struct ResolvedLocation {

@@ -62,6 +62,33 @@ final class EventStore: ObservableObject {
         event.autoMatchedRequestIDs.remove(requestID.uuidString)
         try save(event)
     }
+
+    /// Applies every automatic decision from one matching pass in a single
+    /// atomic disk write. Manual DJ selections always remain untouched.
+    func reconcileAutomaticSelections(eventID: SetlistEvent.ID, requestIDs: [RequestedSong.ID], selections: [String: String]) throws {
+        guard let index = events.firstIndex(where: { $0.id == eventID }) else { return }
+        var event = events[index]
+        var changed = false
+
+        for requestID in requestIDs {
+            let key = requestID.uuidString
+            guard event.selectedTrackPaths[key] == nil || event.autoMatchedRequestIDs.contains(key) else { continue }
+
+            if let trackPath = selections[key] {
+                if event.selectedTrackPaths[key] != trackPath || !event.autoMatchedRequestIDs.contains(key) {
+                    event.selectedTrackPaths[key] = trackPath
+                    event.autoMatchedRequestIDs.insert(key)
+                    changed = true
+                }
+            } else if event.autoMatchedRequestIDs.contains(key) {
+                event.selectedTrackPaths.removeValue(forKey: key)
+                event.autoMatchedRequestIDs.remove(key)
+                changed = true
+            }
+        }
+
+        if changed { try save(event) }
+    }
 }
 
 extension JSONEncoder {

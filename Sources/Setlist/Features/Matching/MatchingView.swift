@@ -3,6 +3,8 @@ import SwiftUI
 struct MatchingView: View {
     @EnvironmentObject private var eventStore: EventStore
     @EnvironmentObject private var trackIndexStore: TrackIndexStore
+    @EnvironmentObject private var musicLocationStore: MusicLocationStore
+    @EnvironmentObject private var playback: PlaybackController
     let eventID: SetlistEvent.ID
     @State private var selectedRequestID: RequestedSong.ID?
     @State private var candidates: [RequestedSong.ID: [TrackCandidate]] = [:]
@@ -29,6 +31,15 @@ struct MatchingView: View {
             }
         }
         .task { await buildMatches() }
+        .safeAreaInset(edge: .bottom, spacing: 0) { PlaybackBar() }
+        .alert("Setlist couldn’t preview this track", isPresented: Binding(
+            get: { playback.errorMessage != nil },
+            set: { if !$0 { playback.dismissError() } }
+        )) {
+            Button("OK", role: .cancel) { playback.dismissError() }
+        } message: {
+            Text(playback.errorMessage ?? "Please try again.")
+        }
     }
 
     private func requestList(_ event: SetlistEvent) -> some View {
@@ -44,7 +55,12 @@ struct MatchingView: View {
                 ForEach(event.requestSongs) { request in
                     VStack(alignment: .leading, spacing: 5) {
                         Text(request.displayName).lineLimit(1)
-                        statusLabel(status(for: request, event: event))
+                        if isLoading {
+                            Text("Checking library…")
+                                .foregroundStyle(.secondary)
+                        } else {
+                            statusLabel(status(for: request, event: event))
+                        }
                     }
                     .padding(.vertical, 5)
                     .tag(request.id)
@@ -64,48 +80,60 @@ struct MatchingView: View {
             .frame(maxWidth: .infinity, maxHeight: .infinity)
         } else if let request = selectedRequest {
             let matches = candidates[request.id] ?? []
-            ScrollView {
-                VStack(alignment: .leading, spacing: 22) {
-                    VStack(alignment: .leading, spacing: 9) {
-                        Text("CHOOSE TRACK VERSIONS").font(.headline).foregroundStyle(Color.setlistBlue)
-                        Text(event.selectedTrackPaths[request.id.uuidString] == nil ? "Possible matches." : "Setlist finds. You choose.")
-                            .font(.system(size: 38, weight: .bold, design: .rounded))
-                        Text(event.selectedTrackPaths[request.id.uuidString] == nil
-                             ? "These are suggestions only. This request remains Missing until you choose a version."
-                             : "Original or standard clean versions are selected automatically only when the match is highly confident.")
-                            .font(.title3).foregroundStyle(.secondary)
-                    }
+            VStack(alignment: .leading, spacing: 0) {
+                VStack(alignment: .leading, spacing: 9) {
+                    Text("CHOOSE TRACK VERSIONS").font(.headline).foregroundStyle(Color.setlistBlue)
+                    Text(event.selectedTrackPaths[request.id.uuidString] == nil ? "Possible matches." : "Setlist finds. You choose.")
+                        .font(.system(size: 38, weight: .bold, design: .rounded))
+                    Text(event.selectedTrackPaths[request.id.uuidString] == nil
+                         ? "These are suggestions only. This request remains Missing until you choose a version."
+                         : "Original or standard clean versions are selected automatically only when the match is highly confident.")
+                        .font(.title3).foregroundStyle(.secondary)
 
-                    if matches.isEmpty {
-                        ContentUnavailableView("Not in your library", systemImage: "magnifyingglass", description: Text("No local version reached Setlist’s confidence threshold. Keep it in Missing songs or search manually later."))
-                            .frame(maxWidth: .infinity, minHeight: 240)
-                    } else {
-                        VStack(spacing: 0) {
-                            ForEach(matches) { candidate in
-                                candidateRow(candidate, request: request, event: event)
-                                if candidate.id != matches.last?.id { Divider() }
+                    HStack {
+                        Spacer()
+                        if event.selectedTrackPaths[request.id.uuidString] != nil {
+                            Button("Clear this track") {
+                                do {
+                                    try eventStore.clearTrackSelection(eventID: event.id, requestID: request.id)
+                                    errorMessage = nil
+                                } catch { errorMessage = "Setlist could not clear this track choice." }
                             }
+                            .buttonStyle(.bordered)
+                            .controlSize(.small)
                         }
-                        .background(Color(nsColor: .controlBackgroundColor))
-                        .clipShape(RoundedRectangle(cornerRadius: 14, style: .continuous))
                     }
-
-                    if event.selectedTrackPaths[request.id.uuidString] != nil {
-                        Button("Clear selected version") {
-                            do {
-                                try eventStore.clearTrackSelection(eventID: event.id, requestID: request.id)
-                                errorMessage = nil
-                            } catch { errorMessage = "Setlist could not clear this track choice." }
-                        }
-                        .buttonStyle(.bordered)
-                    }
-
-                    if let errorMessage { Text(errorMessage).foregroundStyle(.red) }
-                    Text("Choices save locally. Nothing is added to Serato until final crate creation.")
-                        .font(.caption).foregroundStyle(.secondary)
                 }
-                .padding(SetlistTheme.contentPadding)
-                .frame(maxWidth: SetlistTheme.contentWidth, alignment: .leading)
+                .padding(.horizontal, SetlistTheme.contentPadding)
+                .padding(.top, SetlistTheme.contentPadding)
+                .padding(.bottom, 24)
+
+                Divider()
+
+                ScrollView {
+                    VStack(alignment: .leading, spacing: 22) {
+
+                        if matches.isEmpty {
+                            ContentUnavailableView("Not in your library", systemImage: "magnifyingglass", description: Text("No local version reached Setlist’s confidence threshold. Keep it in Missing songs or search manually later."))
+                                .frame(maxWidth: .infinity, minHeight: 240)
+                        } else {
+                            VStack(spacing: 0) {
+                                ForEach(matches) { candidate in
+                                    candidateRow(candidate, request: request, event: event)
+                                    if candidate.id != matches.last?.id { Divider() }
+                                }
+                            }
+                            .background(Color(nsColor: .controlBackgroundColor))
+                            .clipShape(RoundedRectangle(cornerRadius: 14, style: .continuous))
+                        }
+
+                        if let errorMessage { Text(errorMessage).foregroundStyle(.red) }
+                        Text("Choices save locally. Nothing is added to Serato until final crate creation.")
+                            .font(.caption).foregroundStyle(.secondary)
+                    }
+                    .padding(SetlistTheme.contentPadding)
+                    .frame(maxWidth: SetlistTheme.contentWidth, alignment: .leading)
+                }
             }
         } else {
             ContentUnavailableView("No requests yet", systemImage: "music.note.list")
@@ -114,16 +142,31 @@ struct MatchingView: View {
 
     private func candidateRow(_ candidate: TrackCandidate, request: RequestedSong, event: SetlistEvent) -> some View {
         let isChosen = event.selectedTrackPaths[request.id.uuidString] == candidate.track.path
-        return Button {
-            guard !isChosen else { return }
-            do {
-                try eventStore.selectTrack(eventID: event.id, requestID: request.id, trackPath: candidate.track.path)
-                errorMessage = nil
-            } catch { errorMessage = "Setlist could not save this track choice." }
-        } label: {
-            HStack(spacing: 14) {
-                Image(systemName: isChosen ? "checkmark.circle.inset.filled" : "circle")
-                    .font(.title2).foregroundStyle(isChosen ? Color.setlistBlue : Color.secondary)
+        let isPreviewing = playback.currentTrack?.path == candidate.track.path && playback.isPlaying
+        return HStack(spacing: 14) {
+            Button {
+                playback.toggle(track: candidate.track, locations: musicLocationStore.locations)
+            } label: {
+                PlayPauseIcon(isPlaying: isPreviewing, size: 13)
+                    .foregroundStyle(isPreviewing ? .white : Color.setlistBlue)
+                    .frame(width: 44, height: 44)
+                    .background(isPreviewing ? Color.setlistPreviewActive : Color.setlistBlue.opacity(0.08), in: Circle())
+                    .contentShape(Circle())
+            }
+            .buttonStyle(PreviewControlButtonStyle())
+            .contentShape(Circle())
+            .accessibilityLabel("Preview \(candidate.track.title)")
+
+            Button {
+                guard !isChosen else { return }
+                do {
+                    try eventStore.selectTrack(eventID: event.id, requestID: request.id, trackPath: candidate.track.path)
+                    errorMessage = nil
+                } catch { errorMessage = "Setlist could not save this track choice." }
+            } label: {
+                HStack(spacing: 14) {
+                    Image(systemName: isChosen ? "checkmark.circle.inset.filled" : "circle")
+                        .font(.title2).foregroundStyle(isChosen ? Color.setlistBlue : Color.secondary)
                 VStack(alignment: .leading, spacing: 5) {
                     Text(candidate.track.artist.isEmpty ? candidate.track.title : "\(candidate.track.artist) — \(candidate.track.title)")
                         .fontWeight(.semibold)
@@ -134,14 +177,15 @@ struct MatchingView: View {
                             .font(.caption.weight(.medium)).foregroundStyle(.secondary)
                     }
                 }
-                Spacer()
-                Text("\(candidate.confidence)%")
-                    .font(.headline).foregroundStyle(candidate.confidence >= 90 ? .green : .orange)
+                    Spacer()
+                    Text("\(candidate.confidence)%")
+                        .font(.headline).foregroundStyle(candidate.confidence >= 90 ? .green : .orange)
+                }
+                .contentShape(Rectangle())
             }
-            .padding(18)
-            .contentShape(Rectangle())
+            .buttonStyle(.plain)
         }
-        .buttonStyle(.plain)
+        .padding(18)
         .background(isChosen ? Color.setlistBlue.opacity(0.10) : .clear)
     }
 
@@ -170,16 +214,10 @@ struct MatchingView: View {
 
     private func buildMatches() async {
         guard let event else { return }
+        await trackIndexStore.loadSavedIndex()
         selectedRequestID = selectedRequestID ?? event.requestSongs.first?.id
         let requests = event.requestSongs
-        let tracks = trackIndexStore.tracks
-        let catalog: MatchCatalog
-        if let cachedCatalog = trackIndexStore.cachedMatchingCatalog() {
-            catalog = cachedCatalog
-        } else {
-            catalog = await Task.detached(priority: .userInitiated) { MatchCatalog(tracks: tracks) }.value
-            trackIndexStore.cacheMatchingCatalog(catalog)
-        }
+        let catalog = await trackIndexStore.matchingCatalog()
         candidates = await Task.detached(priority: .userInitiated) {
             Dictionary(uniqueKeysWithValues: requests.map { ($0.id, catalog.candidates(for: $0)) })
         }.value
@@ -188,18 +226,17 @@ struct MatchingView: View {
     }
 
     private func applyConservativeAutoMatches(for event: SetlistEvent) {
-        for request in event.requestSongs {
-            do {
-                if let candidate = MatchEngine.automaticSelection(from: candidates[request.id] ?? []) {
-                    try eventStore.autoSelectTrack(eventID: event.id, requestID: request.id, trackPath: candidate.track.path)
-                } else {
-                    // Only revise decisions the app made itself; never erase a
-                    // track the DJ explicitly selected.
-                    try eventStore.clearAutomaticSelection(eventID: event.id, requestID: request.id)
-                }
-            } catch {
-                errorMessage = "Setlist could not save an automatic match."
-            }
+        let selections = Dictionary(uniqueKeysWithValues: event.requestSongs.compactMap { request in
+            MatchEngine.automaticSelection(from: candidates[request.id] ?? []).map { (request.id.uuidString, $0.track.path) }
+        })
+        do {
+            try eventStore.reconcileAutomaticSelections(
+                eventID: event.id,
+                requestIDs: event.requestSongs.map(\.id),
+                selections: selections
+            )
+        } catch {
+            errorMessage = "Setlist could not save automatic matches."
         }
     }
 }
