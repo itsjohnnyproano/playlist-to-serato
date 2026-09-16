@@ -363,8 +363,8 @@ private struct ImportRequestView: View {
     }
 
     var body: some View {
-        ScrollView {
-            VStack(alignment: .leading, spacing: 28) {
+        VStack(spacing: 0) {
+            VStack(alignment: .leading, spacing: 22) {
                 VStack(alignment: .leading, spacing: 10) {
                     Text(existingEvent == nil ? "NEW EVENT" : "EVENT REQUEST")
                         .font(.headline)
@@ -398,10 +398,23 @@ private struct ImportRequestView: View {
                         }
                     }
                     .pickerStyle(.segmented)
-
-                    importBody
                 }
+            }
+            .padding(.horizontal, 48)
+            .padding(.top, 48)
+            .padding(.bottom, 24)
+            .frame(maxWidth: 920, alignment: .leading)
 
+            Divider()
+
+            importBody
+                .padding(.horizontal, 48)
+                .padding(.vertical, 20)
+                .frame(maxWidth: 920, maxHeight: .infinity, alignment: .leading)
+
+            Divider()
+
+            VStack(alignment: .leading, spacing: 10) {
                 HStack {
                     Label("Read-only setup. Music files and existing Serato crates stay untouched.", systemImage: "checkmark.circle.fill")
                         .foregroundStyle(.green)
@@ -416,7 +429,6 @@ private struct ImportRequestView: View {
                     .buttonStyle(.borderedProminent)
                     .disabled(name.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
                 }
-
                 if let confirmation {
                     Text(confirmation)
                         .foregroundStyle(.green)
@@ -426,7 +438,8 @@ private struct ImportRequestView: View {
                         .foregroundStyle(.red)
                 }
             }
-            .padding(48)
+            .padding(.horizontal, 48)
+            .padding(.vertical, 18)
             .frame(maxWidth: 920, alignment: .leading)
         }
         .background(Color(nsColor: .windowBackgroundColor))
@@ -435,14 +448,20 @@ private struct ImportRequestView: View {
     @ViewBuilder private var importBody: some View {
         switch source {
         case .paste:
-            TextEditor(text: $requestText)
-                .font(.body)
-                .frame(minHeight: 180)
-                .padding(10)
-                .overlay(RoundedRectangle(cornerRadius: 10).stroke(.quaternary))
-            Text("One request per line. Use “Artist — Title” when possible; Setlist keeps the original text when it cannot confidently split it.")
-                .font(.caption)
-                .foregroundStyle(.secondary)
+            VStack(alignment: .leading, spacing: 10) {
+                TextEditor(text: $requestText)
+                    .font(.body)
+                    .padding(10)
+                    .overlay(RoundedRectangle(cornerRadius: 10).stroke(.quaternary))
+                    .frame(maxHeight: .infinity)
+                    .layoutPriority(1)
+
+                Text("One request per line. Use “Artist — Title” when possible; Setlist keeps the original text when it cannot confidently split it.")
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+            }
+            .frame(maxHeight: .infinity)
+            .layoutPriority(1)
         case .spotify, .appleMusic, .spreadsheet:
             ContentUnavailableView(
                 "Coming in a later build",
@@ -591,11 +610,12 @@ private struct LibraryScanView: View {
         }
         task = Task {
             do {
-                let result = try await LibraryScanner.scan(locations: musicLocationStore.locations) { scanUpdate in
+                await trackIndexStore.loadSavedIndex()
+                let result = try await LibraryScanner.scan(locations: musicLocationStore.locations, existingTracks: trackIndexStore.tracks) { scanUpdate in
                     await MainActor.run { update = scanUpdate }
                 }
                 guard !Task.isCancelled else { return }
-                try trackIndexStore.replace(with: result.tracks)
+                try await trackIndexStore.replace(with: result.tracks)
                 skippedPathCount = result.skippedPaths.count
                 finished = true
             } catch is CancellationError {

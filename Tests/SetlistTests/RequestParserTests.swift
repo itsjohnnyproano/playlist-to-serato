@@ -184,6 +184,19 @@ final class RequestParserTests: XCTestCase {
         XCTAssertEqual(reconciled.map(\.id), [hyphenID, enDashID])
     }
 
+    func testLegacyTrackIndexEntryDecodesWithoutFingerprint() throws {
+        let id = UUID().uuidString
+        let legacyJSON = """
+        {"id":"\(id)","path":"/Music/TLC - No Scrubs.mp3","artist":"TLC","title":"No Scrubs","fileType":"MP3","duration":210,"sourceFolder":"Music"}
+        """
+
+        let track = try JSONDecoder.setlist.decode(LocalTrack.self, from: Data(legacyJSON.utf8))
+
+        XCTAssertEqual(track.title, "No Scrubs")
+        XCTAssertNil(track.fileSize)
+        XCTAssertNil(track.modificationTimeNanoseconds)
+    }
+
     func testVersionLabelsUseWholeTokensRatherThanNameSubstrings() {
         let request = RequestedSong(artist: "Artist", title: "Edith Oliver")
         let original = LocalTrack(path: "/Music/Artist - Edith Oliver.mp3", artist: "Artist", title: "Edith Oliver", fileType: "MP3", duration: 220, sourceFolder: "Music")
