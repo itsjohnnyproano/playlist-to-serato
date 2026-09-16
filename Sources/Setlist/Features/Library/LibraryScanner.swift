@@ -42,8 +42,8 @@ enum LibraryScanner {
         }, onCancel: {
             fileCollectionTask.cancel()
         })
-        let files = collection.files
-        let existingByPath = Dictionary(uniqueKeysWithValues: existingTracks.map { ($0.path, $0) })
+        let files = uniqueFiles(collection.files)
+        let existingByPath = Dictionary(existingTracks.map { ($0.path, $0) }, uniquingKeysWith: { first, _ in first })
         let reusableTracks = files.compactMap { file -> LocalTrack? in
             guard let track = existingByPath[file.url.path], track.matches(file) else { return nil }
             return track
@@ -66,7 +66,7 @@ enum LibraryScanner {
             total: files.count,
             progress: progress
         )
-        let tracksByPath = Dictionary(uniqueKeysWithValues: (reusableTracks + scannedTracks).map { ($0.path, $0) })
+        let tracksByPath = Dictionary((reusableTracks + scannedTracks).map { ($0.path, $0) }, uniquingKeysWith: { first, _ in first })
         let tracks = files.compactMap { tracksByPath[$0.url.path] }
 
         await progress(ScanUpdate(phase: "Finishing index", completed: files.count, total: files.count, currentFileName: nil))
@@ -133,6 +133,13 @@ enum LibraryScanner {
             }
         }
         return FileCollection(files: results, skippedPaths: skippedPaths)
+    }
+
+    /// A user can approve both a folder and one of its descendants. Keep the
+    /// first descriptor so downstream index entries remain unique and stable.
+    private static func uniqueFiles(_ files: [AudioFileDescriptor]) -> [AudioFileDescriptor] {
+        var seenPaths = Set<String>()
+        return files.filter { seenPaths.insert($0.url.standardizedFileURL.path).inserted }
     }
 
     private static func readTracks(

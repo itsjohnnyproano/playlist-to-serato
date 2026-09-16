@@ -32,6 +32,14 @@ struct MatchingView: View {
         }
         .task { await buildMatches() }
         .safeAreaInset(edge: .bottom, spacing: 0) { PlaybackBar() }
+        .alert("Setlist couldn’t preview this track", isPresented: Binding(
+            get: { playback.errorMessage != nil },
+            set: { if !$0 { playback.dismissError() } }
+        )) {
+            Button("OK", role: .cancel) { playback.dismissError() }
+        } message: {
+            Text(playback.errorMessage ?? "Please try again.")
+        }
     }
 
     private func requestList(_ event: SetlistEvent) -> some View {

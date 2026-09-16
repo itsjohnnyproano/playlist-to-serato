@@ -28,9 +28,11 @@ final class PlaybackController: NSObject, ObservableObject {
         if player.isPlaying {
             player.pause()
             isPlaying = false
+            progressTimer?.invalidate()
+            progressTimer = nil
         } else {
-            player.play()
-            isPlaying = true
+            isPlaying = player.play()
+            if isPlaying { startProgressTimer() }
         }
     }
 
@@ -55,6 +57,10 @@ final class PlaybackController: NSObject, ObservableObject {
         releaseFolderAccess()
     }
 
+    func dismissError() {
+        errorMessage = nil
+    }
+
     private func loadAndPlay(track: LocalTrack, locations: [MusicLocation]) {
         stop()
         errorMessage = nil
@@ -68,11 +74,11 @@ final class PlaybackController: NSObject, ObservableObject {
             currentTrack = track
             duration = newPlayer.duration
             startProgressTimer()
-            newPlayer.play()
+            guard newPlayer.play() else { throw PlaybackError.couldNotStartPlayback }
             isPlaying = true
             loadWaveform(for: fileURL)
         } catch {
-            releaseFolderAccess()
+            stop()
             errorMessage = "Setlist could not play this local file. \(error.localizedDescription)"
         }
     }
@@ -112,6 +118,8 @@ final class PlaybackController: NSObject, ObservableObject {
                 if !player.isPlaying, self.currentTime >= self.duration - 0.05 {
                     self.isPlaying = false
                     self.currentTime = self.duration
+                    self.progressTimer?.invalidate()
+                    self.progressTimer = nil
                 }
             }
         }
@@ -134,6 +142,7 @@ final class PlaybackController: NSObject, ObservableObject {
 private enum PlaybackError: LocalizedError {
     case fileOutsideApprovedLocations
     case reapproveLocation(String)
+    case couldNotStartPlayback
 
     var errorDescription: String? {
         switch self {
@@ -141,6 +150,8 @@ private enum PlaybackError: LocalizedError {
             "This file is no longer inside an approved music location."
         case let .reapproveLocation(name):
             "Please approve \(name) again in Music locations."
+        case .couldNotStartPlayback:
+            "This audio file could not be started."
         }
     }
 }
@@ -152,12 +163,16 @@ enum WaveformGenerator {
               file.length > 0 else { return [] }
 
         let framesPerBucket = max(1, Int(file.length) / bucketCount)
+        // Inspect each portion of the audio, while capping per-bucket CPU work
+        // so long tracks do not make preview interaction feel sluggish.
+        let sampleStride = max(1, framesPerBucket / 256)
         let buffer = AVAudioPCMBuffer(pcmFormat: file.processingFormat, frameCapacity: 8_192)!
-        var buckets: [Float] = []
+        var buckets = Array(repeating: Float.zero, count: bucketCount)
         var peak: Float = 0
 
-        while file.framePosition < file.length, buckets.count < bucketCount {
+        while file.framePosition < file.length {
             guard !Task.isCancelled else { return [] }
+            let startFrame = file.framePosition
             do {
                 try file.read(into: buffer)
             } catch {
@@ -167,17 +182,13 @@ enum WaveformGenerator {
             let frameLength = Int(buffer.frameLength)
             guard frameLength > 0 else { break }
 
-            for offset in stride(from: 0, to: frameLength, by: framesPerBucket) {
-                let end = min(offset + framesPerBucket, frameLength)
-                var bucketPeak: Float = 0
-                for frame in offset..<end {
-                    for channel in 0..<Int(buffer.format.channelCount) {
-                        bucketPeak = max(bucketPeak, abs(channelData[channel][frame]))
-                    }
+            for offset in stride(from: 0, to: frameLength, by: sampleStride) {
+                let absoluteFrame = startFrame + AVAudioFramePosition(offset)
+                let bucketIndex = min(bucketCount - 1, Int((absoluteFrame * AVAudioFramePosition(bucketCount)) / file.length))
+                for channel in 0..<Int(buffer.format.channelCount) {
+                    buckets[bucketIndex] = max(buckets[bucketIndex], abs(channelData[channel][offset]))
                 }
-                buckets.append(bucketPeak)
-                peak = max(peak, bucketPeak)
-                if buckets.count == bucketCount { break }
+                peak = max(peak, buckets[bucketIndex])
             }
         }
 

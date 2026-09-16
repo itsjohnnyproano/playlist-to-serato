@@ -113,7 +113,6 @@ final class TrackIndexStore: ObservableObject {
     }
 
     private func prewarmMatchingCatalog() {
-        guard !tracks.isEmpty else { return }
         let indexedTracks = tracks
         matchingCatalogTask = Task.detached(priority: .userInitiated) {
             MatchCatalog(tracks: indexedTracks)

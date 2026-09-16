@@ -197,6 +197,15 @@ final class RequestParserTests: XCTestCase {
         XCTAssertNil(track.modificationTimeNanoseconds)
     }
 
+    @MainActor
+    func testEmptyTrackIndexProvidesAnEmptyMatchingCatalog() async {
+        let store = TrackIndexStore()
+        let catalog = await store.matchingCatalog()
+        let request = RequestedSong(artist: "TLC", title: "No Scrubs")
+
+        XCTAssertTrue(catalog.candidates(for: request).isEmpty)
+    }
+
     func testVersionLabelsUseWholeTokensRatherThanNameSubstrings() {
         let request = RequestedSong(artist: "Artist", title: "Edith Oliver")
         let original = LocalTrack(path: "/Music/Artist - Edith Oliver.mp3", artist: "Artist", title: "Edith Oliver", fileType: "MP3", duration: 220, sourceFolder: "Music")
