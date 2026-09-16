@@ -40,10 +40,14 @@ enum RequestParser {
     }
 
     private static func stableKey(_ song: RequestedSong) -> String {
-        let source = song.rawText ?? song.displayName
-        return source
+        "\(normalized(song.artist))\u{1F}\(normalized(song.title))"
+    }
+
+    private static func normalized(_ value: String) -> String {
+        value
             .folding(options: [.diacriticInsensitive, .caseInsensitive], locale: .current)
             .lowercased()
-            .trimmingCharacters(in: .whitespacesAndNewlines)
+            .split(whereSeparator: \Character.isWhitespace)
+            .joined(separator: " ")
     }
 }

@@ -165,6 +165,25 @@ final class RequestParserTests: XCTestCase {
         XCTAssertEqual(reconciled.map(\.id), [firstID, secondID])
     }
 
+    func testReconcilePreservesRequestIDsWhenSeparatorsAreReformatted() {
+        let hyphenID = UUID()
+        let enDashID = UUID()
+        let existing = RequestParser.parse("TLC - No Scrubs\nUsher – Yeah").enumerated().map { index, song in
+            RequestedSong(
+                id: index == 0 ? hyphenID : enDashID,
+                artist: song.artist,
+                title: song.title,
+                rawText: song.rawText
+            )
+        }
+
+        // The edit screen rebuilds its request text from displayName, which uses an em dash.
+        let reformatted = RequestParser.parse(existing.map(\.displayName).joined(separator: "\n"))
+        let reconciled = RequestParser.reconcile(reformatted, against: existing)
+
+        XCTAssertEqual(reconciled.map(\.id), [hyphenID, enDashID])
+    }
+
     func testVersionLabelsUseWholeTokensRatherThanNameSubstrings() {
         let request = RequestedSong(artist: "Artist", title: "Edith Oliver")
         let original = LocalTrack(path: "/Music/Artist - Edith Oliver.mp3", artist: "Artist", title: "Edith Oliver", fileType: "MP3", duration: 220, sourceFolder: "Music")
