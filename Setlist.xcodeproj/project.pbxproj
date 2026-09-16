@@ -1,0 +1,51 @@
+// !$*UTF8*$!
+{
+	archiveVersion = 1;
+	classes = {};
+	objectVersion = 56;
+	objects = {
+
+		A00000000000000000000001 /* SetlistApp.swift in Sources */ = {isa = PBXBuildFile; fileRef = A10000000000000000000001 /* SetlistApp.swift */; };
+		A00000000000000000000002 /* ContentView.swift in Sources */ = {isa = PBXBuildFile; fileRef = A10000000000000000000002 /* ContentView.swift */; };
+		A00000000000000000000003 /* EventModels.swift in Sources */ = {isa = PBXBuildFile; fileRef = A10000000000000000000003 /* EventModels.swift */; };
+		A00000000000000000000004 /* EventStore.swift in Sources */ = {isa = PBXBuildFile; fileRef = A10000000000000000000004 /* EventStore.swift */; };
+		A00000000000000000000005 /* LibraryScanner.swift in Sources */ = {isa = PBXBuildFile; fileRef = A10000000000000000000005 /* LibraryScanner.swift */; };
+		A00000000000000000000006 /* LocalStorage.swift in Sources */ = {isa = PBXBuildFile; fileRef = A10000000000000000000006 /* LocalStorage.swift */; };
+		A00000000000000000000007 /* LocalTrack.swift in Sources */ = {isa = PBXBuildFile; fileRef = A10000000000000000000007 /* LocalTrack.swift */; };
+		A00000000000000000000008 /* MusicLocationStore.swift in Sources */ = {isa = PBXBuildFile; fileRef = A10000000000000000000008 /* MusicLocationStore.swift */; };
+		A00000000000000000000009 /* RequestParser.swift in Sources */ = {isa = PBXBuildFile; fileRef = A10000000000000000000009 /* RequestParser.swift */; };
+		A00000000000000000000010 /* AppNavigation.swift in Sources */ = {isa = PBXBuildFile; fileRef = A10000000000000000000012 /* AppNavigation.swift */; };
+		A00000000000000000000011 /* SetlistTheme.swift in Sources */ = {isa = PBXBuildFile; fileRef = A10000000000000000000013 /* SetlistTheme.swift */; };
+
+		A10000000000000000000001 /* SetlistApp.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = App/SetlistApp.swift; sourceTree = "<group>"; };
+		A10000000000000000000002 /* ContentView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ContentView.swift; sourceTree = "<group>"; };
+		A10000000000000000000003 /* EventModels.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Features/Events/EventModels.swift; sourceTree = "<group>"; };
+		A10000000000000000000004 /* EventStore.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Features/Events/EventStore.swift; sourceTree = "<group>"; };
+		A10000000000000000000005 /* LibraryScanner.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Features/Library/LibraryScanner.swift; sourceTree = "<group>"; };
+		A10000000000000000000006 /* LocalStorage.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Shared/LocalStorage.swift; sourceTree = "<group>"; };
+		A10000000000000000000007 /* LocalTrack.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Features/Library/LocalTrack.swift; sourceTree = "<group>"; };
+		A10000000000000000000008 /* MusicLocationStore.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Features/Library/MusicLocationStore.swift; sourceTree = "<group>"; };
+		A10000000000000000000009 /* RequestParser.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Features/Events/RequestParser.swift; sourceTree = "<group>"; };
+		A10000000000000000000010 /* Setlist.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = Setlist.app; sourceTree = BUILT_PRODUCTS_DIR; };
+		A10000000000000000000011 /* Setlist.entitlements */ = {isa = PBXFileReference; lastKnownFileType = text.plist.entitlements; path = Setlist.entitlements; sourceTree = "<group>"; };
+		A10000000000000000000012 /* AppNavigation.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = App/AppNavigation.swift; sourceTree = "<group>"; };
+		A10000000000000000000013 /* SetlistTheme.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Shared/SetlistTheme.swift; sourceTree = "<group>"; };
+
+		A20000000000000000000001 = {isa = PBXGroup; children = (A20000000000000000000002 /* Sources */, A10000000000000000000011 /* Setlist.entitlements */, A20000000000000000000003 /* Products */); sourceTree = "<group>"; };
+		A20000000000000000000002 /* Sources */ = {isa = PBXGroup; children = (A10000000000000000000001 /* SetlistApp.swift */, A10000000000000000000012 /* AppNavigation.swift */, A10000000000000000000013 /* SetlistTheme.swift */, A10000000000000000000002 /* ContentView.swift */, A10000000000000000000003 /* EventModels.swift */, A10000000000000000000004 /* EventStore.swift */, A10000000000000000000005 /* LibraryScanner.swift */, A10000000000000000000006 /* LocalStorage.swift */, A10000000000000000000007 /* LocalTrack.swift */, A10000000000000000000008 /* MusicLocationStore.swift */, A10000000000000000000009 /* RequestParser.swift */); name = Sources; path = Sources/Setlist; sourceTree = "<group>"; };
+		A20000000000000000000003 /* Products */ = {isa = PBXGroup; children = (A10000000000000000000010 /* Setlist.app */); name = Products; sourceTree = "<group>"; };
+
+		A30000000000000000000001 /* Sources */ = {isa = PBXSourcesBuildPhase; buildActionMask = 2147483647; files = (A00000000000000000000001, A00000000000000000000002, A00000000000000000000003, A00000000000000000000004, A00000000000000000000005, A00000000000000000000006, A00000000000000000000007, A00000000000000000000008, A00000000000000000000009, A00000000000000000000010, A00000000000000000000011); runOnlyForDeploymentPostprocessing = 0; };
+
+		A40000000000000000000001 /* Setlist */ = {isa = PBXNativeTarget; buildConfigurationList = A50000000000000000000003 /* Build configuration list for PBXNativeTarget "Setlist" */; buildPhases = (A30000000000000000000001 /* Sources */); buildRules = (); dependencies = (); name = Setlist; productName = Setlist; productReference = A10000000000000000000010 /* Setlist.app */; productType = "com.apple.product-type.application"; };
+		A40000000000000000000002 /* Project object */ = {isa = PBXProject; attributes = {BuildIndependentTargetsInParallel = 1; LastSwiftUpdateCheck = 2600; LastUpgradeCheck = 2600; TargetAttributes = {A40000000000000000000001 = {CreatedOnToolsVersion = 26.0;};};}; buildConfigurationList = A50000000000000000000001 /* Build configuration list for PBXProject "Setlist" */; compatibilityVersion = "Xcode 14.0"; developmentRegion = en; hasScannedForEncodings = 0; knownRegions = (en, Base); mainGroup = A20000000000000000000001; productRefGroup = A20000000000000000000003 /* Products */; projectDirPath = ""; projectRoot = ""; targets = (A40000000000000000000001 /* Setlist */); };
+
+		A50000000000000000000001 /* Build configuration list for PBXProject "Setlist" */ = {isa = XCConfigurationList; buildConfigurations = (A50000000000000000000002 /* Debug */, A50000000000000000000004 /* Release */); defaultConfigurationIsVisible = 0; defaultConfigurationName = Release; };
+		A50000000000000000000002 /* Debug */ = {isa = XCBuildConfiguration; buildSettings = {MACOSX_DEPLOYMENT_TARGET = 14.0; SDKROOT = macosx;}; name = Debug; };
+		A50000000000000000000004 /* Release */ = {isa = XCBuildConfiguration; buildSettings = {MACOSX_DEPLOYMENT_TARGET = 14.0; SDKROOT = macosx;}; name = Release; };
+		A50000000000000000000003 /* Build configuration list for PBXNativeTarget "Setlist" */ = {isa = XCConfigurationList; buildConfigurations = (A50000000000000000000005 /* Debug */, A50000000000000000000006 /* Release */); defaultConfigurationIsVisible = 0; defaultConfigurationName = Release; };
+		A50000000000000000000005 /* Debug */ = {isa = XCBuildConfiguration; buildSettings = {CODE_SIGN_ENTITLEMENTS = Setlist.entitlements; CODE_SIGN_STYLE = Automatic; COMBINE_HIDPI_IMAGES = YES; CURRENT_PROJECT_VERSION = 1; ENABLE_APP_SANDBOX = YES; GENERATE_INFOPLIST_FILE = YES; INFOPLIST_KEY_CFBundleDisplayName = Setlist; INFOPLIST_KEY_LSApplicationCategoryType = "public.app-category.music"; LD_RUNPATH_SEARCH_PATHS = "$(inherited) @executable_path/../Frameworks"; MACOSX_DEPLOYMENT_TARGET = 14.0; MARKETING_VERSION = 0.1; PRODUCT_BUNDLE_IDENTIFIER = com.setlist.app; PRODUCT_NAME = "$(TARGET_NAME)"; SWIFT_VERSION = 6.0; }; name = Debug; };
+		A50000000000000000000006 /* Release */ = {isa = XCBuildConfiguration; buildSettings = {CODE_SIGN_ENTITLEMENTS = Setlist.entitlements; CODE_SIGN_STYLE = Automatic; COMBINE_HIDPI_IMAGES = YES; CURRENT_PROJECT_VERSION = 1; ENABLE_APP_SANDBOX = YES; GENERATE_INFOPLIST_FILE = YES; INFOPLIST_KEY_CFBundleDisplayName = Setlist; INFOPLIST_KEY_LSApplicationCategoryType = "public.app-category.music"; LD_RUNPATH_SEARCH_PATHS = "$(inherited) @executable_path/../Frameworks"; MACOSX_DEPLOYMENT_TARGET = 14.0; MARKETING_VERSION = 0.1; PRODUCT_BUNDLE_IDENTIFIER = com.setlist.app; PRODUCT_NAME = "$(TARGET_NAME)"; SWIFT_VERSION = 6.0; }; name = Release; };
+	};
+	rootObject = A40000000000000000000002 /* Project object */;
+}
