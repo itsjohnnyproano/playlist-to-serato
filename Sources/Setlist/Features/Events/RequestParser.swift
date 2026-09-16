@@ -22,4 +22,28 @@ enum RequestParser {
         }
         return RequestedSong(artist: "", title: line, rawText: line)
     }
+
+    /// Retains stable request IDs for lines the DJ did not change. Selections
+    /// are keyed by those IDs, so this prevents a name/date edit from silently
+    /// discarding already-reviewed tracks.
+    static func reconcile(_ parsedSongs: [RequestedSong], against existingSongs: [RequestedSong]) -> [RequestedSong] {
+        var availableIDs = Dictionary(grouping: existingSongs, by: stableKey)
+            .mapValues { $0.map(\.id) }
+
+        return parsedSongs.map { song in
+            let key = stableKey(song)
+            guard var matchingIDs = availableIDs[key], let existingID = matchingIDs.first else { return song }
+            matchingIDs.removeFirst()
+            availableIDs[key] = matchingIDs
+            return RequestedSong(id: existingID, artist: song.artist, title: song.title, notes: song.notes, rawText: song.rawText)
+        }
+    }
+
+    private static func stableKey(_ song: RequestedSong) -> String {
+        let source = song.rawText ?? song.displayName
+        return source
+            .folding(options: [.diacriticInsensitive, .caseInsensitive], locale: .current)
+            .lowercased()
+            .trimmingCharacters(in: .whitespacesAndNewlines)
+    }
 }

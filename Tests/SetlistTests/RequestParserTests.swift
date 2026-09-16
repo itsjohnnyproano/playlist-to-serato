@@ -151,4 +151,24 @@ final class RequestParserTests: XCTestCase {
 
         XCTAssertEqual(MatchEngine.candidates(for: request, in: tracks).count, 6)
     }
+
+    func testReconcilePreservesRequestIDsForUnchangedLines() {
+        let firstID = UUID()
+        let secondID = UUID()
+        let existing = [
+            RequestedSong(id: firstID, artist: "TLC", title: "No Scrubs", rawText: "TLC — No Scrubs"),
+            RequestedSong(id: secondID, artist: "Usher", title: "Yeah", rawText: "Usher — Yeah")
+        ]
+
+        let reconciled = RequestParser.reconcile(RequestParser.parse("TLC — No Scrubs\nUsher — Yeah"), against: existing)
+
+        XCTAssertEqual(reconciled.map(\.id), [firstID, secondID])
+    }
+
+    func testVersionLabelsUseWholeTokensRatherThanNameSubstrings() {
+        let request = RequestedSong(artist: "Artist", title: "Edith Oliver")
+        let original = LocalTrack(path: "/Music/Artist - Edith Oliver.mp3", artist: "Artist", title: "Edith Oliver", fileType: "MP3", duration: 220, sourceFolder: "Music")
+
+        XCTAssertTrue(MatchEngine.candidates(for: request, in: [original]).first?.versionLabels.isEmpty == true)
+    }
 }

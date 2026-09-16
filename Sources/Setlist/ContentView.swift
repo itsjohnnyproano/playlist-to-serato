@@ -258,8 +258,8 @@ private struct MusicLocationsView: View {
                                 Spacer()
                                 Button("Remove", role: .destructive) {
                                     do {
-                                        try musicLocationStore.remove(location)
                                         try trackIndexStore.invalidate()
+                                        try musicLocationStore.remove(location)
                                         indexRefreshNeeded = true
                                     } catch {
                                         errorMessage = "Setlist could not remove this approved location."
@@ -324,8 +324,8 @@ private struct MusicLocationsView: View {
 
         guard panel.runModal() == .OK, let url = panel.url else { return }
         do {
-            try musicLocationStore.add(url: url)
             try trackIndexStore.invalidate()
+            try musicLocationStore.add(url: url)
             indexRefreshNeeded = true
             errorMessage = nil
         } catch {
@@ -455,12 +455,16 @@ private struct ImportRequestView: View {
     @discardableResult
     private func save() -> SetlistEvent? {
         guard !name.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else { return nil }
-        let songs = source == .paste ? RequestParser.parse(requestText) : existingEvent?.requestSongs ?? []
+        let parsedSongs = source == .paste ? RequestParser.parse(requestText) : existingEvent?.requestSongs ?? []
+        let songs = RequestParser.reconcile(parsedSongs, against: existingEvent?.requestSongs ?? [])
+        let activeRequestIDs = Set(songs.map { $0.id.uuidString })
         let event = SetlistEvent(
             id: existingEvent?.id ?? UUID(),
             name: name.trimmingCharacters(in: .whitespacesAndNewlines),
             date: hasDate ? date : nil,
             requestSongs: songs,
+            selectedTrackPaths: (existingEvent?.selectedTrackPaths ?? [:]).filter { activeRequestIDs.contains($0.key) },
+            autoMatchedRequestIDs: (existingEvent?.autoMatchedRequestIDs ?? []).intersection(activeRequestIDs),
             createdAt: existingEvent?.createdAt ?? .now
         )
         do {

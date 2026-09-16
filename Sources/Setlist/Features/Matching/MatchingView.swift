@@ -88,16 +88,16 @@ struct MatchingView: View {
                         }
                         .background(Color(nsColor: .controlBackgroundColor))
                         .clipShape(RoundedRectangle(cornerRadius: 14, style: .continuous))
+                    }
 
-                        if event.selectedTrackPaths[request.id.uuidString] != nil {
-                            Button("Clear selected version") {
-                                do {
-                                    try eventStore.clearTrackSelection(eventID: event.id, requestID: request.id)
-                                    errorMessage = nil
-                                } catch { errorMessage = "Setlist could not clear this track choice." }
-                            }
-                            .buttonStyle(.bordered)
+                    if event.selectedTrackPaths[request.id.uuidString] != nil {
+                        Button("Clear selected version") {
+                            do {
+                                try eventStore.clearTrackSelection(eventID: event.id, requestID: request.id)
+                                errorMessage = nil
+                            } catch { errorMessage = "Setlist could not clear this track choice." }
                         }
+                        .buttonStyle(.bordered)
                     }
 
                     if let errorMessage { Text(errorMessage).foregroundStyle(.red) }

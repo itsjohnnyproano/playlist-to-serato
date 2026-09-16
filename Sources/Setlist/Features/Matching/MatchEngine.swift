@@ -75,8 +75,23 @@ enum MatchEngine {
         // Folder names such as "New Remixes" must not turn every contained
         // record into a remix. Only evaluate the track metadata and filename.
         let source = "\(track.title) \(URL(fileURLWithPath: track.path).lastPathComponent)".lowercased()
-        return versionTerms.filter { source.contains($0) }
+        let sourceTokens = tokens(source)
+        return versionTerms.filter { term in
+            versionTokenVariants[term, default: [term]].isDisjoint(with: sourceTokens) == false
+        }
     }
+
+    private static let versionTokenVariants: [String: Set<String>] = [
+        "clean": ["clean"], "explicit": ["explicit"], "dirty": ["dirty"],
+        "remix": ["remix", "remixes", "rmx"], "edit": ["edit", "edits"],
+        "intro": ["intro", "intros"], "extended": ["extended", "extend"],
+        "live": ["live"], "instrumental": ["instrumental", "instrumentals", "inst"],
+        "bootleg": ["bootleg", "bootlegs"], "mashup": ["mashup", "mashups"],
+        "flip": ["flip", "flips"], "rework": ["rework", "reworks"],
+        "acapella": ["acapella", "acapellas", "accapella", "accapellas"],
+        "starter": ["starter", "starters"], "transition": ["transition", "transitions"],
+        "blend": ["blend", "blends"], "hype": ["hype"]
+    ]
 
     private static func structuredIdentity(title: Set<String>, artist: Set<String>, document: MatchCatalog.Document) -> Double {
         guard !title.isEmpty else { return 0 }
