@@ -17,9 +17,9 @@ enum RequestParser {
             guard parts.count >= 2 else { continue }
             let artist = parts[0].trimmingCharacters(in: .whitespaces)
             let title = parts.dropFirst().joined(separator: separator).trimmingCharacters(in: .whitespaces)
-            guard !artist.isEmpty, !title.isEmpty else { return RequestedSong(artist: "", title: line) }
-            return RequestedSong(artist: artist, title: title)
+            guard !artist.isEmpty, !title.isEmpty else { return RequestedSong(artist: "", title: line, rawText: line) }
+            return RequestedSong(artist: artist, title: title, rawText: line)
         }
-        return RequestedSong(artist: "", title: line)
+        return RequestedSong(artist: "", title: line, rawText: line)
     }
 }

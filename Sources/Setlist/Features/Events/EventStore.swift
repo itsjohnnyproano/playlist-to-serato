@@ -24,6 +24,20 @@ final class EventStore: ObservableObject {
         try LocalStorage.save(updatedEvents, named: "events.json")
         events = updatedEvents
     }
+
+    func selectTrack(eventID: SetlistEvent.ID, requestID: RequestedSong.ID, trackPath: String) throws {
+        guard let index = events.firstIndex(where: { $0.id == eventID }) else { return }
+        var event = events[index]
+        event.selectedTrackPaths[requestID.uuidString] = trackPath
+        try save(event)
+    }
+
+    func clearTrackSelection(eventID: SetlistEvent.ID, requestID: RequestedSong.ID) throws {
+        guard let index = events.firstIndex(where: { $0.id == eventID }) else { return }
+        var event = events[index]
+        event.selectedTrackPaths.removeValue(forKey: requestID.uuidString)
+        try save(event)
+    }
 }
 
 extension JSONEncoder {

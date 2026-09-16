@@ -6,4 +6,5 @@ enum AppRoute: Equatable {
     case musicLocations
     case event(SetlistEvent.ID)
     case scanning(SetlistEvent)
+    case matching(SetlistEvent.ID)
 }

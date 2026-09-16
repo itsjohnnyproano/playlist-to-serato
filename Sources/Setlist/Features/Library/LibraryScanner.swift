@@ -66,20 +66,22 @@ enum LibraryScanner {
 
     private static func resolve(_ locations: [MusicLocation]) throws -> [ResolvedLocation] {
         try locations.map { location in
-            guard location.usesSecurityScope else {
-                throw LibraryScannerError.reapproveLocation(location.displayName)
-            }
             var isStale = false
             let url = try URL(
                 resolvingBookmarkData: location.bookmarkData,
-                options: [.withSecurityScope],
+                options: location.usesSecurityScope ? [.withSecurityScope] : [],
                 relativeTo: nil,
                 bookmarkDataIsStale: &isStale
             )
-            guard !isStale, url.startAccessingSecurityScopedResource() else {
+            guard !isStale else {
                 throw LibraryScannerError.reapproveLocation(location.displayName)
             }
-            return ResolvedLocation(url: url)
+            if location.usesSecurityScope {
+                guard url.startAccessingSecurityScopedResource() else {
+                    throw LibraryScannerError.reapproveLocation(location.displayName)
+                }
+            }
+            return ResolvedLocation(url: url, usesSecurityScope: location.usesSecurityScope)
         }
     }
 
@@ -123,6 +125,13 @@ enum LibraryScanner {
         let asset = AVURLAsset(url: url)
         let metadata = (try? await asset.load(.commonMetadata)) ?? []
         let duration = try? await asset.load(.duration)
+        let audioTracks = try? await asset.loadTracks(withMediaType: .audio)
+        let dataRate: Float?
+        if let audioTrack = audioTracks?.first {
+            dataRate = try? await audioTrack.load(.estimatedDataRate)
+        } else {
+            dataRate = nil
+        }
         let title = await metadataString(for: metadata.first(where: { $0.commonKey?.rawValue == "title" }))
             ?? url.deletingPathExtension().lastPathComponent
         let artist = await metadataString(for: metadata.first(where: { $0.commonKey?.rawValue == "artist" })) ?? ""
@@ -134,6 +143,7 @@ enum LibraryScanner {
             title: title,
             fileType: url.pathExtension.uppercased(),
             duration: duration?.seconds.isFinite == true ? duration?.seconds : nil,
+            bitrateKbps: dataRate.map { Int(($0 / 1_000).rounded()) },
             sourceFolder: sourceFolder
         )
     }
@@ -151,9 +161,12 @@ private struct FileCollection: Sendable {
 
 private struct ResolvedLocation {
     let url: URL
+    let usesSecurityScope: Bool
 
     func stopAccessing() {
-        url.stopAccessingSecurityScopedResource()
+        if usesSecurityScope {
+            url.stopAccessingSecurityScopedResource()
+        }
     }
 }
 
