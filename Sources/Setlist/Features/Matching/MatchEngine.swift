@@ -6,19 +6,31 @@ struct TrackCandidate: Identifiable, Hashable, Sendable {
     let versionLabels: [String]
 
     var id: UUID { track.id }
+
+    /// Lower is a safer default for an unqualified client request.
+    fileprivate var defaultVersionRank: Int {
+        let labels = Set(versionLabels)
+        if labels.isEmpty { return 0 }
+        if labels.isSubset(of: Set(["clean", "explicit"])) { return 1 }
+        if labels.isSubset(of: Set(["clean", "explicit", "intro"])) { return 2 }
+        if labels.isSubset(of: Set(["clean", "explicit", "extended"])) { return 3 }
+        if labels.isDisjoint(with: MatchEngine.unsuitableAutoVersionTerms) { return 5 }
+        return 10
+    }
 }
 
-enum RequestMatchStatus {
+enum RequestMatchStatus: Equatable {
+    case autoMatched
     case chosen
-    case needsChoice
     case missing
 }
 
 enum MatchEngine {
-    private static let versionTerms = ["clean", "explicit", "remix", "edit", "intro", "extended", "live", "instrumental", "bootleg", "mashup", "flip", "rework"]
+    private static let versionTerms = ["clean", "explicit", "dirty", "remix", "edit", "intro", "extended", "live", "instrumental", "bootleg", "mashup", "flip", "rework", "acapella", "starter", "transition", "blend", "hype"]
+    fileprivate static let unsuitableAutoVersionTerms: Set<String> = ["dirty", "remix", "edit", "intro", "extended", "live", "instrumental", "bootleg", "mashup", "flip", "rework", "acapella", "starter", "transition", "blend", "hype"]
     private static let ignoredTokens: Set<String> = ["a", "an", "and", "the", "feat", "featuring", "ft", "with"]
 
-    static func candidates(for request: RequestedSong, in tracks: [LocalTrack], limit: Int = 5) -> [TrackCandidate] {
+    static func candidates(for request: RequestedSong, in tracks: [LocalTrack], limit: Int? = nil) -> [TrackCandidate] {
         MatchCatalog(tracks: tracks).candidates(for: request, limit: limit)
     }
 
@@ -26,24 +38,106 @@ enum MatchEngine {
         let requestArtist = tokens(request.artist)
         let requestTitle = tokens(request.title)
         let rawRequest = tokens(request.rawText ?? request.displayName)
-        let titleScore = similarity(requestTitle, document.titleTokens)
-        let artistScore = requestArtist.isEmpty ? 1 : similarity(requestArtist, document.artistTokens)
-        let structuredScore = requestArtist.isEmpty ? titleScore : (titleScore * 0.68) + (artistScore * 0.32)
-        let flexibleScore = similarity(rawRequest, document.combinedTokens)
-        let identityScore = max(structuredScore, flexibleScore)
+        let directScore = requestArtist.isEmpty ? 0 : structuredIdentity(title: requestTitle, artist: requestArtist, document: document)
+        // Clients commonly paste "Title — Artist". Score that orientation too,
+        // rather than allowing unordered filename tokens to decide the result.
+        let reversedScore = requestArtist.isEmpty ? 0 : structuredIdentity(title: requestArtist, artist: requestTitle, document: document)
+        let flexibleScore = rawIdentity(rawRequest, document: document)
+        let identityScore = max(directScore, reversedScore, flexibleScore)
         let score = max(0, identityScore - versionPenalty(request: request, candidate: document.track))
-        guard score >= 0.35 else { return nil }
+        guard score >= 0.55 else { return nil }
         return TrackCandidate(track: document.track, confidence: Int((score * 100).rounded()), versionLabels: document.versionLabels)
     }
 
     static func status(for request: RequestedSong, event: SetlistEvent, candidates: [TrackCandidate]) -> RequestMatchStatus {
-        if event.selectedTrackPaths[request.id.uuidString] != nil { return .chosen }
-        return candidates.first?.confidence ?? 0 >= 60 ? .needsChoice : .missing
+        let requestKey = request.id.uuidString
+        if event.autoMatchedRequestIDs.contains(requestKey) { return .autoMatched }
+        if event.selectedTrackPaths[requestKey] != nil { return .chosen }
+        return .missing
+    }
+
+    /// The first release intentionally favors certainty over coverage. A client
+    /// request only becomes an automatic choice when the artist/title identity
+    /// is strong and the local file is an unqualified original version.
+    static func automaticSelection(from candidates: [TrackCandidate]) -> TrackCandidate? {
+        candidates.first {
+            $0.confidence >= 92 && isSafeDefaultVersion($0)
+        }
+    }
+
+    private static func isSafeDefaultVersion(_ candidate: TrackCandidate) -> Bool {
+        // A clean tag still describes the original recording and is a useful,
+        // DJ-safe fallback when the unqualified original is not in the library.
+        candidate.defaultVersionRank <= 1
     }
 
     fileprivate static func versionLabels(for track: LocalTrack) -> [String] {
-        let source = "\(track.title) \(track.path)".lowercased()
+        // Folder names such as "New Remixes" must not turn every contained
+        // record into a remix. Only evaluate the track metadata and filename.
+        let source = "\(track.title) \(URL(fileURLWithPath: track.path).lastPathComponent)".lowercased()
         return versionTerms.filter { source.contains($0) }
+    }
+
+    private static func structuredIdentity(title: Set<String>, artist: Set<String>, document: MatchCatalog.Document) -> Double {
+        guard !title.isEmpty else { return 0 }
+        let titleScore = similarity(title, document.titleTokens)
+        guard titleScore >= 0.7 else { return 0 }
+        guard !artist.isEmpty else { return titleScore }
+        let artistScore = artistSimilarity(artist, artistValue: document.track.artist)
+        guard artistScore >= 0.45 else { return 0 }
+        // Artist evidence prevents title collisions such as a different "Mi
+        // Gente" or a cover of "Blinding Lights" becoming a 100% match.
+        return (titleScore * 0.68) + (artistScore * 0.32)
+    }
+
+    private static func rawIdentity(_ rawRequest: Set<String>, document: MatchCatalog.Document) -> Double {
+        guard !rawRequest.isEmpty else { return 0 }
+        let titleScore = similarity(rawRequest, document.titleTokens)
+        guard titleScore >= 0.7 else { return 0 }
+        // Filename-only imports often place both artist and title in the title
+        // field. They are useful candidates, but never deserve an automatic
+        // match when the library has no artist metadata to corroborate them.
+        guard !document.artistTokens.isEmpty else { return titleScore * 0.7 }
+        let remainingRequestTokens = rawRequest
+            .subtracting(document.titleTokens)
+            .subtracting(Set(versionTerms))
+        guard !remainingRequestTokens.isEmpty else { return titleScore }
+        let artistScore = artistSimilarity(remainingRequestTokens, artistValue: document.track.artist)
+        // If the raw input appears to include an artist, a title collision alone
+        // is not a useful result. Keep it out of the version chooser entirely.
+        guard artistScore >= 0.45 else { return 0 }
+        return (titleScore * 0.75) + (artistScore * 0.25)
+    }
+
+    private static func artistSimilarity(_ left: Set<String>, artistValue: String) -> Double {
+        let right = tokens(artistValue)
+        let tokenScore = similarity(left, right)
+        // Common pasted spelling such as "florida" needs to match the library's
+        // "Flo Rida" without opening the door to unrelated artists.
+        let compactLeft = left.sorted().joined()
+        let compactRight = artistValue
+            .folding(options: [.diacriticInsensitive, .caseInsensitive], locale: .current)
+            .lowercased()
+            .filter { $0.isLetter || $0.isNumber }
+        if compactLeft == compactRight { return 1 }
+        let shortest = min(compactLeft.count, compactRight.count)
+        if shortest >= 5, (compactLeft.contains(compactRight) || compactRight.contains(compactLeft)) {
+            return max(tokenScore, 0.9)
+        }
+        return tokenScore
+    }
+
+    fileprivate static func identityTitleTokens(for title: String) -> Set<String> {
+        var base = title
+            .replacingOccurrences(of: #"\([^)]*\)"#, with: "", options: .regularExpression)
+            .replacingOccurrences(of: #"\[[^\]]*\]"#, with: "", options: .regularExpression)
+        if let dashRange = base.range(of: " - ", options: .backwards) {
+            let suffix = String(base[dashRange.upperBound...]).lowercased()
+            if versionTerms.contains(where: suffix.contains) {
+                base = String(base[..<dashRange.lowerBound])
+            }
+        }
+        return tokens(base)
     }
 
     private static func versionPenalty(request: RequestedSong, candidate: LocalTrack) -> Double {
@@ -54,7 +148,7 @@ enum MatchEngine {
 
         return unrequestedTerms.reduce(0) { penalty, term in
             switch term {
-            case "remix", "bootleg", "mashup", "flip", "rework", "live", "instrumental": penalty + 0.25
+            case "remix", "bootleg", "mashup", "flip", "rework", "live", "instrumental", "acapella", "starter", "transition", "blend": penalty + 0.25
             default: penalty
             }
         }
@@ -96,7 +190,7 @@ struct MatchCatalog: Sendable {
 
         for track in tracks {
             let artistTokens = MatchEngine.tokens(track.artist)
-            let titleTokens = MatchEngine.tokens(track.title)
+            let titleTokens = MatchEngine.identityTitleTokens(for: track.title)
             let combinedTokens = artistTokens.union(titleTokens)
             let document = Document(track: track, artistTokens: artistTokens, titleTokens: titleTokens, combinedTokens: combinedTokens, versionLabels: MatchEngine.versionLabels(for: track))
             let index = documents.count
@@ -107,17 +201,17 @@ struct MatchCatalog: Sendable {
         self.tokenIndex = tokenIndex
     }
 
-    func candidates(for request: RequestedSong, limit: Int = 5) -> [TrackCandidate] {
+    func candidates(for request: RequestedSong, limit: Int? = nil) -> [TrackCandidate] {
         let queryTokens = MatchEngine.tokens(request.rawText ?? request.displayName)
         let candidateIndices = Set(queryTokens.flatMap { tokenIndex[$0] ?? [] })
         let documentsToScore = candidateIndices.isEmpty ? documents : candidateIndices.map { documents[$0] }
         return documentsToScore.compactMap { MatchEngine.candidate(for: request, document: $0) }
             .sorted {
-                $0.confidence == $1.confidence
-                    ? $0.track.title.localizedCaseInsensitiveCompare($1.track.title) == .orderedAscending
-                    : $0.confidence > $1.confidence
+                if $0.confidence != $1.confidence { return $0.confidence > $1.confidence }
+                if $0.defaultVersionRank != $1.defaultVersionRank { return $0.defaultVersionRank < $1.defaultVersionRank }
+                return $0.track.title.localizedCaseInsensitiveCompare($1.track.title) == .orderedAscending
             }
-            .prefix(limit)
+            .prefix(limit ?? Int.max)
             .map { $0 }
     }
 }

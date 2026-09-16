@@ -35,7 +35,7 @@ struct MatchingView: View {
         VStack(alignment: .leading, spacing: 0) {
             VStack(alignment: .leading, spacing: 5) {
                 Text("REQUEST LIST").font(.caption.weight(.bold)).foregroundStyle(.secondary)
-                Text("\(event.requestSongs.count) songs · \(chosenCount(event)) chosen")
+                Text("\(event.requestSongs.count) songs · \(chosenCount(event)) selected")
                     .font(.subheadline).foregroundStyle(.secondary)
             }
             .padding(20)
@@ -68,9 +68,11 @@ struct MatchingView: View {
                 VStack(alignment: .leading, spacing: 22) {
                     VStack(alignment: .leading, spacing: 9) {
                         Text("CHOOSE TRACK VERSIONS").font(.headline).foregroundStyle(Color.setlistBlue)
-                        Text("Listen, then choose.")
+                        Text(event.selectedTrackPaths[request.id.uuidString] == nil ? "Possible matches." : "Setlist finds. You choose.")
                             .font(.system(size: 38, weight: .bold, design: .rounded))
-                        Text("These are the strongest local versions for \(request.displayName).")
+                        Text(event.selectedTrackPaths[request.id.uuidString] == nil
+                             ? "These are suggestions only. This request remains Missing until you choose a version."
+                             : "Original or standard clean versions are selected automatically only when the match is highly confident.")
                             .font(.title3).foregroundStyle(.secondary)
                     }
 
@@ -149,9 +151,9 @@ struct MatchingView: View {
 
     @ViewBuilder private func statusLabel(_ status: RequestMatchStatus) -> some View {
         switch status {
+        case .autoMatched: Text("✓ Auto-matched").foregroundStyle(.green)
         case .chosen: Text("✓ Version chosen").foregroundStyle(.green)
-        case .needsChoice: Text("Choose a version").foregroundStyle(.orange)
-        case .missing: Text("Not in library").foregroundStyle(.orange)
+        case .missing: Text("Missing track").foregroundStyle(.orange)
         }
     }
 
@@ -181,6 +183,23 @@ struct MatchingView: View {
         candidates = await Task.detached(priority: .userInitiated) {
             Dictionary(uniqueKeysWithValues: requests.map { ($0.id, catalog.candidates(for: $0)) })
         }.value
+        applyConservativeAutoMatches(for: event)
         isLoading = false
+    }
+
+    private func applyConservativeAutoMatches(for event: SetlistEvent) {
+        for request in event.requestSongs {
+            do {
+                if let candidate = MatchEngine.automaticSelection(from: candidates[request.id] ?? []) {
+                    try eventStore.autoSelectTrack(eventID: event.id, requestID: request.id, trackPath: candidate.track.path)
+                } else {
+                    // Only revise decisions the app made itself; never erase a
+                    // track the DJ explicitly selected.
+                    try eventStore.clearAutomaticSelection(eventID: event.id, requestID: request.id)
+                }
+            } catch {
+                errorMessage = "Setlist could not save an automatic match."
+            }
+        }
     }
 }

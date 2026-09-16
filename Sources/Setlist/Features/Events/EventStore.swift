@@ -29,6 +29,29 @@ final class EventStore: ObservableObject {
         guard let index = events.firstIndex(where: { $0.id == eventID }) else { return }
         var event = events[index]
         event.selectedTrackPaths[requestID.uuidString] = trackPath
+        event.autoMatchedRequestIDs.remove(requestID.uuidString)
+        try save(event)
+    }
+
+    func autoSelectTrack(eventID: SetlistEvent.ID, requestID: RequestedSong.ID, trackPath: String) throws {
+        guard let index = events.firstIndex(where: { $0.id == eventID }) else { return }
+        var event = events[index]
+        let key = requestID.uuidString
+        // Preserve a DJ's manual decision, but allow a prior automatic decision
+        // to be replaced when the matching engine improves or the index changes.
+        guard event.selectedTrackPaths[key] == nil || event.autoMatchedRequestIDs.contains(key) else { return }
+        event.selectedTrackPaths[key] = trackPath
+        event.autoMatchedRequestIDs.insert(key)
+        try save(event)
+    }
+
+    func clearAutomaticSelection(eventID: SetlistEvent.ID, requestID: RequestedSong.ID) throws {
+        guard let index = events.firstIndex(where: { $0.id == eventID }) else { return }
+        var event = events[index]
+        let key = requestID.uuidString
+        guard event.autoMatchedRequestIDs.contains(key) else { return }
+        event.selectedTrackPaths.removeValue(forKey: key)
+        event.autoMatchedRequestIDs.remove(key)
         try save(event)
     }
 
@@ -36,6 +59,7 @@ final class EventStore: ObservableObject {
         guard let index = events.firstIndex(where: { $0.id == eventID }) else { return }
         var event = events[index]
         event.selectedTrackPaths.removeValue(forKey: requestID.uuidString)
+        event.autoMatchedRequestIDs.remove(requestID.uuidString)
         try save(event)
     }
 }

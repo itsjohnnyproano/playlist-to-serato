@@ -6,19 +6,24 @@ struct SetlistEvent: Identifiable, Codable, Hashable, Sendable {
     var date: Date?
     var requestSongs: [RequestedSong]
     var selectedTrackPaths: [String: String]
+    /// Request IDs selected automatically by the conservative match policy.
+    /// Manual choices are deliberately kept separate so the review UI can
+    /// explain which decisions still need the DJ's attention.
+    var autoMatchedRequestIDs: Set<String>
     var createdAt: Date
 
-    init(id: UUID = UUID(), name: String, date: Date? = nil, requestSongs: [RequestedSong] = [], selectedTrackPaths: [String: String] = [:], createdAt: Date = .now) {
+    init(id: UUID = UUID(), name: String, date: Date? = nil, requestSongs: [RequestedSong] = [], selectedTrackPaths: [String: String] = [:], autoMatchedRequestIDs: Set<String> = [], createdAt: Date = .now) {
         self.id = id
         self.name = name
         self.date = date
         self.requestSongs = requestSongs
         self.selectedTrackPaths = selectedTrackPaths
+        self.autoMatchedRequestIDs = autoMatchedRequestIDs
         self.createdAt = createdAt
     }
 
     private enum CodingKeys: String, CodingKey {
-        case id, name, date, requestSongs, selectedTrackPaths, createdAt
+        case id, name, date, requestSongs, selectedTrackPaths, autoMatchedRequestIDs, createdAt
     }
 
     init(from decoder: Decoder) throws {
@@ -28,6 +33,7 @@ struct SetlistEvent: Identifiable, Codable, Hashable, Sendable {
         date = try container.decodeIfPresent(Date.self, forKey: .date)
         requestSongs = try container.decode([RequestedSong].self, forKey: .requestSongs)
         selectedTrackPaths = try container.decodeIfPresent([String: String].self, forKey: .selectedTrackPaths) ?? [:]
+        autoMatchedRequestIDs = try container.decodeIfPresent(Set<String>.self, forKey: .autoMatchedRequestIDs) ?? []
         createdAt = try container.decode(Date.self, forKey: .createdAt)
     }
 
